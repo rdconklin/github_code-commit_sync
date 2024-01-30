@@ -3,19 +3,72 @@ name: Sync GitHub To CodeCommit
 on: [push]
 
 jobs:
-  mirror_to_codecommit:
+    create-approval-issue:
+        runs-on: ubuntu-latest
+        environment: github_code-commit_sync
+        outputs:
+            issue_number: ${{ steps.create_issue.outputs.number }}
+        steps:
+            - name: Checkout Repository
+              uses: actions/checkout@v2
 
-    runs-on: ubuntu-latest
+            - name: Get Changed Files
+              id: get_changed_files
+              uses: lots0logs/gh-action-get-changed-files@2.2.2
+              with:
+                token: ${{ secrets.GITHUB_TOKEN }}
+            - name: Create Approval Issue
+              id: create_issue
+              run: |
+               FILES_MODIFIED=$(cat $HOME/files_modified.json)
+               ISSUE_BODY=$(echo -e "Respond with 'approve' to send files to host:\n\n$FILES_MODIFIED")
+               ISSUE_RESULT=$(gh issue create --title "Approval Needed for Host Update" --body "$ISSUE_BODY")
+               echo "$ISSUE_RESULT"
+               ISSUE_NUMBER=$(echo "$ISSUE_RESULT" | grep -oP '.*/\K[0-9]+')
+               echo "Created Issue #$ISSUE_NUMBER"
+               echo "::set-output name=number::$ISSUE_NUMBER"
+              env:
+                GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                    
+    wait-for-approval:
+        needs: create-approval-issue
+        runs-on: ubuntu-latest
+        steps:
+            - name: Wait for Issue Approval
+              uses: actions/github-script@v3
+              with:
+                github-token: ${{ secrets.GITHUB_TOKEN }}
+                script: |
+                 const issueNumber = ${{ needs.create-approval-issue.outputs.issue_number }};
+                 let approved = false;
+                 while (!approved) {
+                   const comments = await github.issues.listComments({
+                     owner: context.repo.owner,
+                     repo: context.repo.repo,
+                     issue_number: issueNumber,
+                   });
+                   approved = comments.data.some(comment => comment.body.includes('approve'));
+                   if (!approved) {
+                     console.log('Waiting for approval...');
+                     await new Promise(r => setTimeout(r, 60000)); // Wait for 1 minute
+                   }
+                 }
+                 console.log('Approval received, proceeding with update.');
 
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
 
-      - name: Mirror to CodeCommit
-        uses: pixta-dev/repository-mirroring-action@v1
-        with:
-          target_repo_url: ssh://git-codecommit.us-west-2.amazonaws.com/v1/repos/github-repo-sync
-          ssh_private_key: ${{ secrets.CODECOMMIT_SSH_PRIVATE_KEY }}
-          ssh_username: ${{ secrets.CODECOMMIT_SSH_PRIVATE_KEY_ID }}
+    mirror_to_codecommit:
+        needs: wait-for-approval
+        runs-on: ubuntu-latest
+
+        steps:
+        - name: Checkout Code
+          uses: actions/checkout@v3
+          with:
+            fetch-depth: 0
+
+        - name: Mirror to CodeCommit
+          uses: pixta-dev/repository-mirroring-action@v1
+          with:
+            target_repo_url: ssh://git-codecommit.us-west-2.amazonaws.com/v1/repos/github-repo-sync
+            ssh_private_key: ${{ secrets.CODECOMMIT_SSH_PRIVATE_KEY }}
+            ssh_username: ${{ secrets.CODECOMMIT_SSH_PRIVATE_KEY_ID }}
