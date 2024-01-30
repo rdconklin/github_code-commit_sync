@@ -11,10 +11,17 @@ jobs:
         steps:
             - name: Checkout Repository
               uses: actions/checkout@v2
+            
+            - name: Get Changed Files
+              id: get_changed_files
+              uses: lots0logs/gh-action-get-changed-files@2.2.2
+              with:
+                token: ${{ secrets.GITHUB_TOKEN }}
 
             - name: Create Approval Issue
               id: create_issue
               run: |
+               FILES_MODIFIED=$(cat $HOME/files_modified.json)
                ISSUE_BODY=$(echo -e "Respond with 'approve' to send files to host:\n\n$FILES_MODIFIED")
                ISSUE_RESULT=$(gh issue create --title "Approval Needed for Host Update" --body "$ISSUE_BODY")
                echo "$ISSUE_RESULT"
