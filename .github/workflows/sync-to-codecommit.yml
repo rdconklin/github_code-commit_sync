@@ -21,8 +21,7 @@ jobs:
             - name: Create Approval Issue
               id: create_issue
               run: |
-               FILES_MODIFIED=$(cat $HOME/files_modified.json)
-               ISSUE_BODY=$(echo -e "Respond with 'approve' to send files to host:\n\n$FILES_MODIFIED")
+               ISSUE_BODY=$(echo -e "Respond with 'approve' to complete the commit and sync the files with AWS CodeCommit")
                ISSUE_RESULT=$(gh issue create --title "Approval Needed for Host Update" --body "$ISSUE_BODY")
                echo "$ISSUE_RESULT"
                ISSUE_NUMBER=$(echo "$ISSUE_RESULT" | grep -oP '.*/\K[0-9]+')
